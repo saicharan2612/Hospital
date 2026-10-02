@@ -183,6 +183,7 @@ export function DoctorDashboard() {
   // Reschedule form state
   const [rescheduleTarget, setRescheduleTarget] = useState<AppointmentRequest | null>(null)
   const [rescheduleDate, setRescheduleDate] = useState(getTodayIso())
+  const rescheduleDateRef = React.useRef<HTMLInputElement>(null)
   const [rescheduleTime, setRescheduleTime] = useState('')
   const [rescheduleNote, setRescheduleNote] = useState('')
   const [rescheduleError, setRescheduleError] = useState<string | null>(null)
@@ -2366,23 +2367,44 @@ export function DoctorDashboard() {
               </div>
 
               {/* Form Inputs */}
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="grid gap-1.5 text-xs font-semibold text-[var(--care-ink)]">
-                  Select New Date
-                  <input
-                    type="date"
-                    min={todayIso}
-                    value={rescheduleDate}
-                    onChange={(e) => {
-                      setRescheduleDate(e.target.value)
-                      setRescheduleError(null)
-                    }}
-                    className="h-11 rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 text-xs font-medium outline-none focus:border-[var(--care-primary)]"
-                  />
-                </label>
+              <div className="grid gap-3 sm:grid-cols-2 items-start">
+                <div>
+                  <label className="flex h-5 items-center font-bold text-slate-800 mb-1.5 text-xs">
+                    Select New Date (Interactive Calendar)
+                  </label>
+                  <div className="relative flex items-center">
+                    <input
+                      ref={rescheduleDateRef}
+                      type="date"
+                      min={todayIso}
+                      value={rescheduleDate}
+                      onChange={(e) => {
+                        setRescheduleDate(e.target.value)
+                        setRescheduleError(null)
+                      }}
+                      className="h-11 w-full rounded-xl border-2 border-slate-300 bg-white pl-3 pr-9 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-cyan-600 focus:ring-4 focus:ring-cyan-100 cursor-pointer"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        try {
+                          rescheduleDateRef.current?.showPicker()
+                        } catch {
+                          rescheduleDateRef.current?.focus()
+                        }
+                      }}
+                      className="absolute right-2 flex size-7 items-center justify-center rounded-lg text-cyan-700 hover:bg-cyan-50 hover:text-cyan-900 transition"
+                      title="Click calendar to pick date"
+                    >
+                      <Calendar className="size-4" />
+                    </button>
+                  </div>
+                </div>
 
-                <label className="grid gap-1.5 text-xs font-semibold text-[var(--care-ink)]">
-                  Select Available Time Slot
+                <div>
+                  <label className="flex h-5 items-center font-bold text-slate-800 mb-1.5 text-xs">
+                    Select Available Time Slot
+                  </label>
                   {availableRescheduleSlots.length > 0 ? (
                     <select
                       value={rescheduleTime}
@@ -2390,7 +2412,7 @@ export function DoctorDashboard() {
                         setRescheduleTime(e.target.value)
                         setRescheduleError(null)
                       }}
-                      className="h-11 rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 text-xs font-medium outline-none focus:border-[var(--care-primary)]"
+                      className="h-11 w-full rounded-xl border-2 border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-cyan-600 focus:ring-4 focus:ring-cyan-100"
                     >
                       {availableRescheduleSlots.map((slot) => (
                         <option key={slot} value={slot}>
@@ -2399,22 +2421,22 @@ export function DoctorDashboard() {
                       ))}
                     </select>
                   ) : (
-                    <div className="flex h-11 items-center rounded-xl border border-red-200 bg-red-50 px-3 text-[11px] font-bold text-red-800">
+                    <div className="flex h-11 items-center rounded-xl border-2 border-red-300 bg-red-50 px-3 text-[11px] font-bold text-red-800">
                       No slots left today. Pick tomorrow.
                     </div>
                   )}
-                </label>
+                </div>
               </div>
 
               {/* Doctor Note */}
-              <label className="grid gap-1.5 text-xs font-semibold text-[var(--care-ink)]">
+              <label className="grid gap-1.5 text-xs font-bold text-slate-800">
                 Reason & Instructions to Patient
                 <textarea
                   value={rescheduleNote}
                   onChange={(e) => setRescheduleNote(e.target.value)}
                   rows={3}
                   placeholder="e.g. Physician schedule adjustment. Please confirm this afternoon slot."
-                  className="rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 py-2 text-xs outline-none focus:border-[var(--care-primary)]"
+                  className="rounded-xl border-2 border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-900 shadow-xs outline-none transition focus:border-cyan-600 focus:ring-4 focus:ring-cyan-100 placeholder:text-slate-400"
                 />
               </label>
             </div>

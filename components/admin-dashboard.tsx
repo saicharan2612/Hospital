@@ -25,7 +25,9 @@ import {
   getStoredBillings,
   saveBillings,
   getStoredMedicines,
-  saveMedicines
+  saveMedicines,
+  BACKUP_STAFF_REPLACEMENTS,
+  getEligibleReplacementsForStaff
 } from '@/lib/demo-accounts'
 import {
   Activity,
@@ -134,6 +136,37 @@ interface AuditLogEntry {
   tone: 'success' | 'warning' | 'info'
 }
 
+function getTomorrowIsoString(): string {
+  const d = new Date()
+  d.setDate(d.getDate() + 1)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function getDayAfterTomorrowIsoString(): string {
+  const d = new Date()
+  d.setDate(d.getDate() + 2)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function calculateDaysBetween(startStr: string, endStr: string): number {
+  if (!startStr || !endStr) return 1
+  try {
+    const s = new Date(startStr)
+    const e = new Date(endStr)
+    const diffTime = e.getTime() - s.getTime()
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1
+    return diffDays > 0 ? diffDays : 1
+  } catch {
+    return 1
+  }
+}
+
 export function AdminDashboard() {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<AdminTab>('patient-analysis')
@@ -189,10 +222,13 @@ export function AdminDashboard() {
   const [showAddLeaveModal, setShowAddLeaveModal] = useState(false)
   const [newLeaveStaffId, setNewLeaveStaffId] = useState('')
   const [newLeaveType, setNewLeaveType] = useState<LeaveRequest['leaveType']>('Sick Leave')
-  const [newLeaveStart, setNewLeaveStart] = useState('Tomorrow')
-  const [newLeaveEnd, setNewLeaveEnd] = useState('In 3 days')
+  const [newLeaveStart, setNewLeaveStart] = useState(getTomorrowIsoString)
+  const [newLeaveEnd, setNewLeaveEnd] = useState(getDayAfterTomorrowIsoString)
   const [newLeaveShift, setNewLeaveShift] = useState<LeaveRequest['shiftSlot']>('Morning (08:00 - 16:00)')
   const [newLeaveReason, setNewLeaveReason] = useState('')
+
+  const newLeaveStartRef = React.useRef<HTMLInputElement>(null)
+  const newLeaveEndRef = React.useRef<HTMLInputElement>(null)
 
   // Shift & Absence Replacement State
   const [shiftRoster, setShiftRoster] = useState<StaffShiftAssignment[]>([])
@@ -243,9 +279,25 @@ export function AdminDashboard() {
     }
   ])
 
-  // Load all initial state on mount
+  // Load all initial state on mount and subscribe to live changes
   useEffect(() => {
     refreshAllData()
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (
+        e.key === 'carelink_leave_requests' ||
+        e.key === 'carelink_patients' ||
+        e.key === 'carelink_billings' ||
+        e.key === 'carelink_medicines' ||
+        e.key === 'carelink_custom_accounts' ||
+        e.key === 'carelink_shift_roster'
+      ) {
+        refreshAllData()
+      }
+    }
+
+    window.addEventListener('storage', handleStorageChange)
+    return () => window.removeEventListener('storage', handleStorageChange)
   }, [])
 
   const refreshAllData = () => {
@@ -514,7 +566,8 @@ export function AdminDashboard() {
   const handleApproveLeave = (leaveId: string) => {
     const leave = leaveRequests.find(l => l.id === leaveId)
     if (!leave) return
-    const repStaff = staffAccounts.find(s => s.id === selectedReplacementStaffId)
+    const allCandidates = [...staffAccounts, ...BACKUP_STAFF_REPLACEMENTS]
+    const repStaff = allCandidates.find(s => s.id === selectedReplacementStaffId)
 
     const updated = leaveRequests.map(l => {
       if (l.id === leaveId) {
@@ -587,6 +640,20 @@ export function AdminDashboard() {
     e.preventDefault()
     const staff = staffAccounts.find(s => s.id === newLeaveStaffId)
     if (!staff) return
+
+    const tomorrowStr = getTomorrowIsoString()
+    if (newLeaveStart < tomorrowStr) {
+      showNotification('Leave can only be requested from tomorrow onwards. Today and past dates are not permitted.')
+      return
+    }
+
+    if (newLeaveEnd < newLeaveStart) {
+      showNotification('End date cannot be earlier than start date.')
+      return
+    }
+
+    const finalDays = Math.max(1, calculateDaysBetween(newLeaveStart, newLeaveEnd))
+
     const newReq: LeaveRequest = {
       id: `leave-${Date.now()}`,
       staffId: staff.id,
@@ -597,16 +664,16 @@ export function AdminDashboard() {
       startDate: newLeaveStart,
       endDate: newLeaveEnd,
       shiftSlot: newLeaveShift,
-      reason: newLeaveReason.trim() || 'Personal / Medical Leave',
+      reason: `${newLeaveReason.trim() || 'Personal / Medical Leave'} (${finalDays} day${finalDays > 1 ? 's' : ''})`,
       status: 'pending',
-      submittedAt: 'Just now'
+      submittedAt: `Today at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
     }
     const updated = [newReq, ...leaveRequests]
     setLeaveRequests(updated)
     saveLeaveRequests(updated)
     setShowAddLeaveModal(false)
     setNewLeaveReason('')
-    showNotification(`Submitted leave request for ${staff.name}!`)
+    showNotification(`Submitted leave request for ${staff.name} (${finalDays} day(s))!`)
   }
 
   // --- SHIFT & ABSENCE REPLACEMENT ACTIONS ---
@@ -630,7 +697,8 @@ export function AdminDashboard() {
   }
 
   const handleAssignRosterReplacement = (assignmentId: string) => {
-    const repStaff = staffAccounts.find(s => s.id === rosterReplacementStaffId)
+    const allCandidates = [...staffAccounts, ...BACKUP_STAFF_REPLACEMENTS]
+    const repStaff = allCandidates.find(s => s.id === rosterReplacementStaffId)
     if (!repStaff) return
     const updated = shiftRoster.map(s => {
       if (s.id === assignmentId) {
@@ -877,7 +945,7 @@ export function AdminDashboard() {
     )
   })
 
-  const eligibleStaffForReplacement = staffAccounts.filter(s => s.roleSlug !== 'patient' && s.roleSlug !== 'admin')
+  const activeHospitalStaff = staffAccounts.filter(s => s.roleSlug !== 'patient' && s.roleSlug !== 'admin')
 
   return (
     <div className="flex min-h-screen bg-[var(--care-bg)] text-[var(--care-ink)]">
@@ -3168,8 +3236,8 @@ export function AdminDashboard() {
                   onChange={(e) => setSelectedReplacementStaffId(e.target.value)}
                   className="h-10 w-full rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 text-xs font-semibold text-[var(--care-ink)] outline-none"
                 >
-                  <option value="">-- Select Available Eligible Staff Member --</option>
-                  {eligibleStaffForReplacement
+                  <option value="">-- Select Qualified Replacement Member --</option>
+                  {getEligibleReplacementsForStaff(showApproveModal, staffAccounts)
                     .filter(s => s.id !== showApproveModal.staffId)
                     .map(s => (
                       <option key={s.id} value={s.id}>
@@ -3247,8 +3315,8 @@ export function AdminDashboard() {
                   className="h-10 w-full rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 text-xs font-semibold text-[var(--care-ink)] outline-none"
                   required
                 >
-                  <option value="">-- Choose Replacement Member --</option>
-                  {eligibleStaffForReplacement
+                  <option value="">-- Choose Qualified Replacement Member --</option>
+                  {getEligibleReplacementsForStaff(showReplaceStaffModal, staffAccounts)
                     .filter(s => s.id !== showReplaceStaffModal.staffId)
                     .map(s => (
                       <option key={s.id} value={s.id}>
@@ -3307,14 +3375,14 @@ export function AdminDashboard() {
 
             <form onSubmit={handleCreateLeaveRequest} className="space-y-4 text-xs">
               <div>
-                <label className="block font-bold text-[var(--care-ink)] mb-1">Staff Member *</label>
+                <label className="block font-bold text-slate-800 mb-1.5">Staff Member *</label>
                 <select
                   value={newLeaveStaffId}
                   onChange={(e) => setNewLeaveStaffId(e.target.value)}
-                  className="h-10 w-full rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 text-xs font-semibold outline-none"
+                  className="h-11 w-full rounded-xl border-2 border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-cyan-600 focus:ring-4 focus:ring-cyan-100"
                   required
                 >
-                  {eligibleStaffForReplacement.map(s => (
+                  {activeHospitalStaff.map(s => (
                     <option key={s.id} value={s.id}>
                       {s.name} — {s.roleLabel} ({s.department})
                     </option>
@@ -3324,11 +3392,11 @@ export function AdminDashboard() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-[var(--care-ink)] mb-1">Leave Type</label>
+                  <label className="block font-bold text-slate-800 mb-1.5">Leave Type</label>
                   <select
                     value={newLeaveType}
                     onChange={(e) => setNewLeaveType(e.target.value as any)}
-                    className="h-10 w-full rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 text-xs outline-none"
+                    className="h-11 w-full rounded-xl border-2 border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-cyan-600 focus:ring-4 focus:ring-cyan-100"
                   >
                     <option value="Sick Leave">Sick Leave</option>
                     <option value="Annual Leave">Annual Leave</option>
@@ -3338,11 +3406,11 @@ export function AdminDashboard() {
                   </select>
                 </div>
                 <div>
-                  <label className="block font-bold text-[var(--care-ink)] mb-1">Shift / Slot</label>
+                  <label className="block font-bold text-slate-800 mb-1.5">Shift / Slot</label>
                   <select
                     value={newLeaveShift}
                     onChange={(e) => setNewLeaveShift(e.target.value as any)}
-                    className="h-10 w-full rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 text-xs outline-none"
+                    className="h-11 w-full rounded-xl border-2 border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-cyan-600 focus:ring-4 focus:ring-cyan-100"
                   >
                     {SHIFT_SLOTS.map(s => (
                       <option key={s} value={s}>{s}</option>
@@ -3351,39 +3419,82 @@ export function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3 items-start">
                 <div>
-                  <label className="block font-bold text-[var(--care-ink)] mb-1">Start Date</label>
-                  <input
-                    type="text"
-                    value={newLeaveStart}
-                    onChange={(e) => setNewLeaveStart(e.target.value)}
-                    placeholder="e.g. Tomorrow"
-                    className="h-10 w-full rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 text-xs outline-none"
-                    required
-                  />
+                  <label className="flex h-5 items-center font-bold text-slate-800 mb-1.5 truncate">
+                    Start Date <span className="ml-1 text-[10px] font-normal text-cyan-700">(From Tomorrow)</span>
+                  </label>
+                  <div className="relative flex items-center">
+                    <input
+                      ref={newLeaveStartRef}
+                      type="date"
+                      min={getTomorrowIsoString()}
+                      value={newLeaveStart}
+                      onChange={(e) => {
+                        setNewLeaveStart(e.target.value)
+                        if (e.target.value > newLeaveEnd) {
+                          setNewLeaveEnd(e.target.value)
+                        }
+                      }}
+                      className="h-11 w-full rounded-xl border-2 border-slate-300 bg-white pl-3 pr-9 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-cyan-600 focus:ring-4 focus:ring-cyan-100 cursor-pointer"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        try {
+                          newLeaveStartRef.current?.showPicker()
+                        } catch {
+                          newLeaveStartRef.current?.focus()
+                        }
+                      }}
+                      className="absolute right-2 flex size-7 items-center justify-center rounded-lg text-cyan-700 hover:bg-cyan-50 hover:text-cyan-900 transition"
+                      title="Click calendar to pick start date"
+                    >
+                      <Calendar className="size-4" />
+                    </button>
+                  </div>
                 </div>
                 <div>
-                  <label className="block font-bold text-[var(--care-ink)] mb-1">End Date</label>
-                  <input
-                    type="text"
-                    value={newLeaveEnd}
-                    onChange={(e) => setNewLeaveEnd(e.target.value)}
-                    placeholder="e.g. In 2 days"
-                    className="h-10 w-full rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 text-xs outline-none"
-                    required
-                  />
+                  <label className="flex h-5 items-center font-bold text-slate-800 mb-1.5 truncate">
+                    End Date <span className="ml-1 text-[10px] font-normal text-cyan-700">(To Date)</span>
+                  </label>
+                  <div className="relative flex items-center">
+                    <input
+                      ref={newLeaveEndRef}
+                      type="date"
+                      min={newLeaveStart || getTomorrowIsoString()}
+                      value={newLeaveEnd}
+                      onChange={(e) => setNewLeaveEnd(e.target.value)}
+                      className="h-11 w-full rounded-xl border-2 border-slate-300 bg-white pl-3 pr-9 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-cyan-600 focus:ring-4 focus:ring-cyan-100 cursor-pointer"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        try {
+                          newLeaveEndRef.current?.showPicker()
+                        } catch {
+                          newLeaveEndRef.current?.focus()
+                        }
+                      }}
+                      className="absolute right-2 flex size-7 items-center justify-center rounded-lg text-cyan-700 hover:bg-cyan-50 hover:text-cyan-900 transition"
+                      title="Click calendar to pick end date"
+                    >
+                      <Calendar className="size-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
 
               <div>
-                <label className="block font-bold text-[var(--care-ink)] mb-1">Reason for Leave</label>
+                <label className="block font-bold text-slate-800 mb-1.5">Reason for Leave *</label>
                 <textarea
                   value={newLeaveReason}
                   onChange={(e) => setNewLeaveReason(e.target.value)}
                   placeholder="Explain details and reason for requested time off..."
                   rows={2}
-                  className="w-full rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] p-3 text-xs outline-none focus:border-[var(--care-primary)]"
+                  className="w-full rounded-xl border-2 border-slate-300 bg-white p-3 text-xs font-medium text-slate-900 shadow-xs outline-none transition focus:border-cyan-600 focus:ring-4 focus:ring-cyan-100 placeholder:text-slate-400"
                   required
                 />
               </div>
@@ -3391,14 +3502,14 @@ export function AdminDashboard() {
               <div className="pt-2 flex gap-2">
                 <button
                   type="submit"
-                  className="flex-1 h-10 rounded-xl bg-[var(--care-primary)] text-white font-bold hover:bg-[var(--care-primary-dark)] transition"
+                  className="flex-1 h-11 rounded-xl bg-cyan-700 text-white font-black hover:bg-cyan-800 transition shadow-md"
                 >
                   Submit for Approval
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowAddLeaveModal(false)}
-                  className="rounded-xl border border-[var(--care-border)] px-4 font-semibold text-[var(--care-ink)]"
+                  className="rounded-xl border-2 border-slate-300 px-5 font-bold text-slate-700 hover:bg-slate-100 transition"
                 >
                   Cancel
                 </button>

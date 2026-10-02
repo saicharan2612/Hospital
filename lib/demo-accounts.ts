@@ -1183,6 +1183,16 @@ export interface PrescriptionRecord {
   isNurseDirectCare?: boolean
   treatmentType?: 'Doctor Consult' | 'Nurse Direct Fever/General Protocol' | 'Emergency Triage'
   createdAt: string
+  // Medicine Staff & Billing Staff Sync Fields:
+  fulfillmentStatus?: 'pending_prep' | 'preparing' | 'ready_for_billing' | 'ready_to_collect' | 'dispensed'
+  isReady?: boolean
+  readyAt?: string
+  billingStatus?: 'pending' | 'paid'
+  billPaidAt?: string
+  dispensedAt?: string
+  dispensedBy?: string
+  pickupCounter?: string
+  pickupNotificationSent?: boolean
 }
 
 export const INITIAL_PRESCRIPTIONS: PrescriptionRecord[] = [
@@ -1232,7 +1242,9 @@ export const INITIAL_PRESCRIPTIONS: PrescriptionRecord[] = [
     sharedWithPatient: true,
     sharedWithBilling: true,
     treatmentType: 'Doctor Consult',
-    createdAt: 'Today at 09:15 AM'
+    createdAt: 'Today at 09:15 AM',
+    fulfillmentStatus: 'pending_prep',
+    billingStatus: 'pending'
   },
   {
     id: 'rx-102',
@@ -1269,7 +1281,12 @@ export const INITIAL_PRESCRIPTIONS: PrescriptionRecord[] = [
     sharedWithPatient: true,
     sharedWithBilling: true,
     treatmentType: 'Doctor Consult',
-    createdAt: 'Today at 08:45 AM'
+    createdAt: 'Today at 08:45 AM',
+    fulfillmentStatus: 'ready_for_billing',
+    isReady: true,
+    readyAt: 'Today at 09:00 AM',
+    billingStatus: 'paid',
+    billPaidAt: 'Today at 09:20 AM'
   }
 ]
 
@@ -1320,6 +1337,236 @@ export function syncPrescriptionToBillingRecord(rx: PrescriptionRecord): Billing
     status: 'pending',
     createdAt: rx.createdAt
   }
+}
+
+export interface ReplacementStaffCandidate {
+  id: string
+  name: string
+  roleSlug: string
+  roleLabel: string
+  department: string
+  specialization?: string
+}
+
+export const BACKUP_STAFF_REPLACEMENTS: ReplacementStaffCandidate[] = [
+  // Nurse Backups (for Nurse Replacement)
+  {
+    id: 'rep-nurse-1',
+    name: 'Nurse Samantha Cole, RN',
+    roleSlug: 'nurse',
+    roleLabel: 'Nurse',
+    department: 'Ward 4B / Inpatient Nursing',
+    specialization: 'Critical Care & Bedside Vitals'
+  },
+  {
+    id: 'rep-nurse-2',
+    name: 'Nurse Kevin Brooks, BSN',
+    roleSlug: 'nurse',
+    roleLabel: 'Nurse',
+    department: 'Outpatient Triage & Emergency Relief',
+    specialization: 'Emergency Nursing & Patient Care'
+  },
+  {
+    id: 'rep-nurse-3',
+    name: 'Nurse Clara Oswald, RN',
+    roleSlug: 'nurse',
+    roleLabel: 'Nurse',
+    department: 'Pediatrics & General Ward',
+    specialization: 'Medication Administration & Vitals'
+  },
+  // Medicine Staff Backups (for Medicine Staff Replacement)
+  {
+    id: 'rep-med-1',
+    name: 'Rachel Green, MLS',
+    roleSlug: 'medical-staff',
+    roleLabel: 'Medicine Staff',
+    department: 'Central Medicine & Diagnostics',
+    specialization: 'Clinical Pharmacy & Dispensing Support'
+  },
+  {
+    id: 'rep-med-2',
+    name: 'Aaron Brooks, PharmD',
+    roleSlug: 'medical-staff',
+    roleLabel: 'Medicine Staff',
+    department: 'Central Hospital Pharmacy & Lab',
+    specialization: 'Pharmacotherapy & Medication Verification'
+  },
+  {
+    id: 'rep-med-3',
+    name: 'Maya Lin, CPhT',
+    roleSlug: 'medical-staff',
+    roleLabel: 'Medicine Staff',
+    department: 'Dispensary & Pharmaceutical Inventory',
+    specialization: 'Medication Packaging & Stock Control'
+  },
+  // Billing Staff Backups (for Billing Staff Replacement)
+  {
+    id: 'rep-billing-1',
+    name: 'Lisa Ray, CPC',
+    roleSlug: 'billing',
+    roleLabel: 'Billing Staff',
+    department: 'Revenue Cycle & Claims Relief',
+    specialization: 'Claims Adjudication & Insurance Reconciliation'
+  },
+  {
+    id: 'rep-billing-2',
+    name: 'Michael Chang, CPB',
+    roleSlug: 'billing',
+    roleLabel: 'Billing Staff',
+    department: 'Patient Financial Services',
+    specialization: 'Patient Accounts & Billing Gateway'
+  },
+  {
+    id: 'rep-billing-3',
+    name: 'Hannah Abbott, CPC',
+    roleSlug: 'billing',
+    roleLabel: 'Billing Staff',
+    department: 'Invoicing & Claims Processing',
+    specialization: 'ICD-10 Coding & Payment Verification'
+  },
+  // Receptionist Backups (for Receptionist Replacement)
+  {
+    id: 'rep-rec-1',
+    name: 'Chloe Simmons',
+    roleSlug: 'receptionist',
+    roleLabel: 'Receptionist',
+    department: 'Central Admissions & Front Desk',
+    specialization: 'Patient Intake & Queue Management'
+  },
+  {
+    id: 'rep-rec-2',
+    name: 'Lucas Gray',
+    roleSlug: 'receptionist',
+    roleLabel: 'Receptionist',
+    department: 'OPD Check-in & Patient Services',
+    specialization: 'Registration & Appointment Scheduling'
+  },
+  {
+    id: 'rep-rec-3',
+    name: 'Emma Watson',
+    roleSlug: 'receptionist',
+    roleLabel: 'Receptionist',
+    department: 'Admissions & Information Desk',
+    specialization: 'Visitor Passes & Patient Triage Support'
+  },
+  // Doctor Backups (strictly for Doctor Replacement ONLY)
+  {
+    id: 'rep-doc-1',
+    name: 'Dr. Olivia Bennett, MD',
+    roleSlug: 'doctor',
+    roleLabel: 'Doctor',
+    department: 'Internal Medicine & Cardiology',
+    specialization: 'Cardiology'
+  },
+  {
+    id: 'rep-doc-2',
+    name: 'Dr. Marcus Brody, MD',
+    roleSlug: 'doctor',
+    roleLabel: 'Doctor',
+    department: 'General Medicine & OPD',
+    specialization: 'Internal Medicine'
+  }
+]
+
+export function getEligibleReplacementsForStaff(
+  targetStaff: { id?: string; roleSlug?: string; roleLabel?: string; staffRole?: string; name?: string; staffName?: string } | null | undefined,
+  allStaff: DemoAccount[] = []
+): Array<{ id: string; name: string; roleLabel: string; department: string; roleSlug: string }> {
+  if (!targetStaff) {
+    // If no target specified, NEVER show doctors, patients, or admins
+    const regular = allStaff
+      .filter((s) => s.roleSlug !== 'patient' && s.roleSlug !== 'admin' && s.roleSlug !== 'doctor' && !s.name.startsWith('Dr.'))
+      .map((s) => ({
+        id: s.id,
+        name: s.name,
+        roleLabel: s.roleLabel,
+        department: s.department,
+        roleSlug: s.roleSlug
+      }))
+    const backups = BACKUP_STAFF_REPLACEMENTS.filter((b) => b.roleSlug !== 'doctor' && !b.name.startsWith('Dr.'))
+    const combined = [...regular, ...backups]
+    const seen = new Set<string>()
+    return combined.filter((c) => {
+      if (seen.has(c.id)) return false
+      seen.add(c.id)
+      return true
+    })
+  }
+
+  const roleStr = (targetStaff.roleSlug || targetStaff.roleLabel || targetStaff.staffRole || '').toLowerCase()
+  const nameStr = (targetStaff.name || targetStaff.staffName || '').toLowerCase()
+  const isTargetDoctor = roleStr === 'doctor' || roleStr.includes('doctor') || roleStr.includes('physician') || nameStr.startsWith('dr.')
+
+  if (isTargetDoctor) {
+    // Only physicians/doctors can replace a doctor
+    const regularDoc = allStaff
+      .filter((s) => s.id !== targetStaff.id && (s.roleSlug === 'doctor' || s.roleLabel.toLowerCase().includes('doctor') || s.name.startsWith('Dr.')))
+      .map((s) => ({
+        id: s.id,
+        name: s.name,
+        roleLabel: s.roleLabel,
+        department: s.department,
+        roleSlug: s.roleSlug
+      }))
+    const backupDocs = BACKUP_STAFF_REPLACEMENTS.filter((b) => b.roleSlug === 'doctor' || b.name.startsWith('Dr.'))
+    const combined = [...regularDoc, ...backupDocs]
+    const seen = new Set<string>()
+    return combined.filter((c) => {
+      if (seen.has(c.id)) return false
+      seen.add(c.id)
+      return true
+    })
+  }
+
+  // TARGET IS A NON-DOCTOR (Billing Staff, Nurse, Receptionist, Medicine Staff, etc.)
+  // CRITICAL REQUIREMENT: Doctors' names MUST NOT be shown in replacement for any of these staff!
+  const isNurse = roleStr === 'nurse' || roleStr.includes('nurse')
+  const isMedicineStaff = roleStr === 'medical-staff' || roleStr.includes('medicine') || roleStr.includes('medical') || roleStr.includes('pharm') || roleStr.includes('lab')
+  const isBilling = roleStr === 'billing' || roleStr.includes('billing') || roleStr.includes('claim') || roleStr.includes('finance')
+  const isReceptionist = roleStr === 'receptionist' || roleStr.includes('reception') || roleStr.includes('front') || roleStr.includes('intake')
+
+  const regularCandidates = allStaff
+    .filter((s) => {
+      if (s.id === targetStaff.id) return false
+      if (s.roleSlug === 'patient' || s.roleSlug === 'admin') return false
+      // STRICT FILTER: NEVER allow any doctor to be a replacement for nurse, medicine staff, billing staff, receptionist
+      if (s.roleSlug === 'doctor' || s.name.startsWith('Dr.') || s.roleLabel.toLowerCase().includes('doctor') || s.roleLabel.toLowerCase().includes('physician')) {
+        return false
+      }
+      if (isNurse) return s.roleSlug === 'nurse'
+      if (isMedicineStaff) return s.roleSlug === 'medical-staff'
+      if (isBilling) return s.roleSlug === 'billing'
+      if (isReceptionist) return s.roleSlug === 'receptionist'
+      return true
+    })
+    .map((s) => ({
+      id: s.id,
+      name: s.name,
+      roleLabel: s.roleLabel,
+      department: s.department,
+      roleSlug: s.roleSlug
+    }))
+
+  const backupCandidates = BACKUP_STAFF_REPLACEMENTS.filter((b) => {
+    if (b.id === targetStaff.id) return false
+    // STRICT FILTER: NEVER allow any doctor
+    if (b.roleSlug === 'doctor' || b.name.startsWith('Dr.') || b.roleLabel.toLowerCase().includes('doctor') || b.roleLabel.toLowerCase().includes('physician')) {
+      return false
+    }
+    if (isNurse) return b.roleSlug === 'nurse'
+    if (isMedicineStaff) return b.roleSlug === 'medical-staff'
+    if (isBilling) return b.roleSlug === 'billing'
+    if (isReceptionist) return b.roleSlug === 'receptionist'
+    return true
+  })
+
+  const combined = [...regularCandidates, ...backupCandidates]
+  const seen = new Set<string>()
+  return combined.filter((c) => {
+    if (seen.has(c.id)) return false
+    seen.add(c.id)
+    return true
+  })
 }
 
 

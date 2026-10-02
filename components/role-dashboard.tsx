@@ -101,6 +101,7 @@ export function RoleDashboard({ roleSlug }: RoleDashboardProps) {
   
   const [bookingDoctorId, setBookingDoctorId] = useState('')
   const [bookingDate, setBookingDate] = useState(getTodayIsoString())
+  const bookingDateRef = React.useRef<HTMLInputElement>(null)
   const [bookingTime, setBookingTime] = useState('')
   const [bookingVisitType, setBookingVisitType] = useState<AppointmentRequest['visitType']>('New Consultation')
   const [bookingReason, setBookingReason] = useState('')
@@ -545,23 +546,44 @@ export function RoleDashboard({ roleSlug }: RoleDashboardProps) {
                 )}
 
                 {/* Date & Time selection */}
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="grid gap-1.5 text-xs font-bold text-[var(--care-ink)]">
-                    Preferred Date
-                    <input
-                      type="date"
-                      min={getTodayIsoString()}
-                      value={bookingDate}
-                      onChange={(event) => {
-                        setBookingDate(event.target.value)
-                        setBookingError(null)
-                      }}
-                      className="h-11 rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 text-xs font-medium"
-                    />
-                  </label>
+                <div className="grid gap-3 sm:grid-cols-2 items-start">
+                  <div>
+                    <label className="flex h-5 items-center font-bold text-slate-800 mb-1.5 text-xs">
+                      Preferred Date (Interactive Calendar)
+                    </label>
+                    <div className="relative flex items-center">
+                      <input
+                        ref={bookingDateRef}
+                        type="date"
+                        min={getTodayIsoString()}
+                        value={bookingDate}
+                        onChange={(event) => {
+                          setBookingDate(event.target.value)
+                          setBookingError(null)
+                        }}
+                        className="h-11 w-full rounded-xl border-2 border-slate-300 bg-white pl-3 pr-9 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100 cursor-pointer"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          try {
+                            bookingDateRef.current?.showPicker()
+                          } catch {
+                            bookingDateRef.current?.focus()
+                          }
+                        }}
+                        className="absolute right-2 flex size-7 items-center justify-center rounded-lg text-teal-700 hover:bg-teal-50 hover:text-teal-900 transition"
+                        title="Click calendar to pick date"
+                      >
+                        <Calendar className="size-4" />
+                      </button>
+                    </div>
+                  </div>
 
-                  <label className="grid gap-1.5 text-xs font-bold text-[var(--care-ink)]">
-                    Available Time Slot (Within Doctor Hours)
+                  <div>
+                    <label className="flex h-5 items-center font-bold text-slate-800 mb-1.5 text-xs">
+                      Available Time Slot (Within Doctor Hours)
+                    </label>
                     {validBookingSlots.length > 0 ? (
                       <select
                         value={bookingTime}
@@ -569,7 +591,7 @@ export function RoleDashboard({ roleSlug }: RoleDashboardProps) {
                           setBookingTime(event.target.value)
                           setBookingError(null)
                         }}
-                        className="h-11 rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 text-xs font-semibold text-[var(--care-ink)]"
+                        className="h-11 w-full rounded-xl border-2 border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
                       >
                         {validBookingSlots.map((slot) => (
                           <option key={slot} value={slot}>
@@ -578,21 +600,21 @@ export function RoleDashboard({ roleSlug }: RoleDashboardProps) {
                         ))}
                       </select>
                     ) : (
-                      <div className="flex h-11 items-center rounded-xl border border-red-200 bg-red-50 px-3 text-[11px] font-bold text-red-800">
+                      <div className="flex h-11 items-center rounded-xl border-2 border-red-300 bg-red-50 px-3 text-[11px] font-bold text-red-800">
                         {selectedDoctorAvailability && !selectedDoctorAvailability.availableDays.includes(getDayOfWeekShort(bookingDate))
                           ? `Doctor not available on ${getDayOfWeekShort(bookingDate)}s`
                           : 'No slots available for this date'}
                       </div>
                     )}
-                  </label>
+                  </div>
                 </div>
 
-                <label className="grid gap-1.5 text-xs font-bold text-[var(--care-ink)]">
+                <label className="grid gap-1.5 text-xs font-bold text-slate-800">
                   Visit Type
                   <select
                     value={bookingVisitType}
                     onChange={(event) => setBookingVisitType(event.target.value as AppointmentRequest['visitType'])}
-                    className="h-11 rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 text-xs font-medium"
+                    className="h-11 rounded-xl border-2 border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
                   >
                     <option value="New Consultation">New Consultation</option>
                     <option value="Follow-up">Follow-up</option>
@@ -601,7 +623,7 @@ export function RoleDashboard({ roleSlug }: RoleDashboardProps) {
                   </select>
                 </label>
 
-                <label className="grid gap-1.5 text-xs font-bold text-[var(--care-ink)]">
+                <label className="grid gap-1.5 text-xs font-bold text-slate-800">
                   Reason for Visit & Symptoms
                   <textarea
                     value={bookingReason}
@@ -611,7 +633,7 @@ export function RoleDashboard({ roleSlug }: RoleDashboardProps) {
                     }}
                     rows={3}
                     placeholder="Describe your current symptoms or reason for consulting the doctor..."
-                    className="rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 py-2 text-xs"
+                    className="rounded-xl border-2 border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-900 shadow-xs outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100 placeholder:text-slate-400"
                   />
                 </label>
 
@@ -619,7 +641,7 @@ export function RoleDashboard({ roleSlug }: RoleDashboardProps) {
                   type="button"
                   disabled={!selectedDoctorAvailability?.isAvailable || validBookingSlots.length === 0}
                   onClick={handleBookAppointment}
-                  className="h-11 rounded-xl bg-[var(--care-primary)] text-xs font-bold text-white shadow-sm hover:bg-[var(--care-primary-dark)] disabled:cursor-not-allowed disabled:opacity-50 transition"
+                  className="h-11 rounded-xl bg-teal-600 text-xs font-black text-white shadow-md hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50 transition"
                 >
                   Submit Appointment Request
                 </button>
@@ -686,94 +708,145 @@ export function RoleDashboard({ roleSlug }: RoleDashboardProps) {
               <div className="mt-5 grid gap-5 lg:grid-cols-2">
                 {prescriptions
                   .filter((rx) => rx.sharedWithPatient)
-                  .map((rx) => (
-                    <div
-                      key={rx.id}
-                      className="rounded-2xl border border-teal-200 bg-white p-5 shadow-xs flex flex-col justify-between"
-                    >
-                      <div>
-                        <div className="flex items-start justify-between gap-2 border-b border-[var(--care-border)] pb-3">
-                          <div>
-                            <span className="rounded-md bg-teal-100 px-2 py-0.5 text-[10px] font-extrabold text-teal-900">
-                              Rx #{rx.id.toUpperCase()}
-                            </span>
-                            <h3 className="mt-1 text-sm font-bold text-[var(--care-ink)]">{rx.diagnosis}</h3>
-                            <p className="text-[11px] text-[var(--care-muted)]">
-                              By {rx.nurseName} · {rx.doctorName}
-                            </p>
-                          </div>
-                          <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800 border border-emerald-200">
-                            {rx.status.toUpperCase()}
-                          </span>
-                        </div>
+                  .map((rx) => {
+                    const isDispensed = rx.status === 'dispensed'
+                    const isReadyToCollect = isDispensed || rx.fulfillmentStatus === 'ready_to_collect'
+                    const isPacked = rx.isReady
+                    const isPaid = rx.billingStatus === 'paid'
 
-                        {/* Vitals Recorded */}
-                        <div className="mt-3 grid grid-cols-4 gap-2 rounded-xl bg-slate-50 p-2.5 text-center text-[10px]">
-                          <div>
-                            <p className="text-[var(--care-muted)] font-semibold">BP</p>
-                            <p className="font-bold text-[var(--care-ink)]">{rx.vitals.bloodPressure}</p>
-                          </div>
-                          <div>
-                            <p className="text-[var(--care-muted)] font-semibold">HR</p>
-                            <p className="font-bold text-[var(--care-ink)]">{rx.vitals.heartRate}</p>
-                          </div>
-                          <div>
-                            <p className="text-[var(--care-muted)] font-semibold">SpO2</p>
-                            <p className="font-bold text-[var(--care-ink)]">{rx.vitals.spO2}</p>
-                          </div>
-                          <div>
-                            <p className="text-[var(--care-muted)] font-semibold">Temp</p>
-                            <p className="font-bold text-[var(--care-ink)]">{rx.vitals.temperature}</p>
-                          </div>
-                        </div>
-
-                        {/* Medication Timetable */}
-                        <div className="mt-3 space-y-2">
-                          <p className="text-xs font-bold text-[var(--care-ink)] flex items-center gap-1.5">
-                            <Clock className="size-3.5 text-teal-600" />
-                            Medication Schedule & Timings:
-                          </p>
-                          <div className="space-y-2">
-                            {rx.medications.map((med) => (
-                              <div
-                                key={med.id}
-                                className="rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)]/60 p-3 text-xs"
-                              >
-                                <div className="flex items-center justify-between font-bold text-[var(--care-ink)]">
-                                  <span>
-                                    {med.name} ({med.dosage} - {med.form})
-                                  </span>
-                                  <span className="rounded-md bg-teal-100 px-2 py-0.5 text-[10px] text-teal-900 font-extrabold">
-                                    {med.durationDays} Days
-                                  </span>
-                                </div>
-                                <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
-                                  <span className="rounded bg-white px-2 py-0.5 font-bold text-teal-800 border border-teal-200">
-                                    🕒 {med.scheduleTimes.join(', ')}
-                                  </span>
-                                  <span className="rounded bg-amber-50 px-2 py-0.5 font-semibold text-amber-900 border border-amber-200">
-                                    🍽️ {med.timingInstructions}
-                                  </span>
-                                  <span className="text-[var(--care-muted)]">({med.frequency})</span>
-                                </div>
-                                {med.instructions && (
-                                  <p className="mt-1.5 text-[11px] text-[var(--care-muted)] italic">
-                                    "{med.instructions}"
-                                  </p>
-                                )}
+                    return (
+                      <div
+                        key={rx.id}
+                        className={`rounded-2xl border p-5 shadow-xs flex flex-col justify-between transition ${
+                          isReadyToCollect
+                            ? 'border-emerald-300 bg-linear-to-b from-emerald-50/60 via-white to-white ring-2 ring-emerald-400/30'
+                            : isPacked
+                            ? 'border-indigo-200 bg-white'
+                            : 'border-teal-200 bg-white'
+                        }`}
+                      >
+                        <div>
+                          {/* Live Collection Banner if ready to collect */}
+                          {isReadyToCollect && (
+                            <div className="mb-3.5 rounded-xl bg-emerald-600 p-3 text-white shadow-md flex items-center gap-3">
+                              <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-white text-emerald-700 font-bold">
+                                🔔
+                              </span>
+                              <div>
+                                <p className="text-xs font-black">
+                                  🎉 Medicines Ready for Collection!
+                                </p>
+                                <p className="text-[11px] text-emerald-100">
+                                  Please proceed to <strong>{rx.pickupCounter || 'Pharmacy Counter #2 (Main OPD)'}</strong>
+                                </p>
                               </div>
-                            ))}
+                            </div>
+                          )}
+
+                          <div className="flex items-start justify-between gap-2 border-b border-[var(--care-border)] pb-3">
+                            <div>
+                              <span className="rounded-md bg-teal-100 px-2 py-0.5 text-[10px] font-extrabold text-teal-900">
+                                Rx #{rx.id.toUpperCase()}
+                              </span>
+                              <h3 className="mt-1 text-sm font-bold text-[var(--care-ink)]">{rx.diagnosis}</h3>
+                              <p className="text-[11px] text-[var(--care-muted)]">
+                                By {rx.nurseName} · {rx.doctorName}
+                              </p>
+                            </div>
+                            
+                            {/* Pharmacy & Dispensing Status Pill */}
+                            <div>
+                              {isReadyToCollect ? (
+                                <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-extrabold text-emerald-900 border border-emerald-300 flex items-center gap-1">
+                                  <Check className="size-3" />
+                                  Ready to Collect
+                                </span>
+                              ) : isPaid ? (
+                                <span className="rounded-full bg-indigo-100 px-2.5 py-0.5 text-[10px] font-bold text-indigo-900 border border-indigo-200">
+                                  Paid · Handover in Prep
+                                </span>
+                              ) : isPacked ? (
+                                <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-bold text-amber-900 border border-amber-200">
+                                  Packed · Awaiting Bill Settle
+                                </span>
+                              ) : (
+                                <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-bold text-slate-700 border border-slate-200">
+                                  Order in Pharmacy Queue
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Vitals Recorded */}
+                          {rx.vitals && (
+                            <div className="mt-3 grid grid-cols-4 gap-2 rounded-xl bg-slate-50 p-2.5 text-center text-[10px]">
+                              <div>
+                                <p className="text-[var(--care-muted)] font-semibold">BP</p>
+                                <p className="font-bold text-[var(--care-ink)]">{rx.vitals.bloodPressure || '120/80'}</p>
+                              </div>
+                              <div>
+                                <p className="text-[var(--care-muted)] font-semibold">HR</p>
+                                <p className="font-bold text-[var(--care-ink)]">{rx.vitals.heartRate || '75 bpm'}</p>
+                              </div>
+                              <div>
+                                <p className="text-[var(--care-muted)] font-semibold">SpO2</p>
+                                <p className="font-bold text-[var(--care-ink)]">{rx.vitals.spO2 || '99%'}</p>
+                              </div>
+                              <div>
+                                <p className="text-[var(--care-muted)] font-semibold">Temp</p>
+                                <p className="font-bold text-[var(--care-ink)]">{rx.vitals.temperature || '98.6 °F'}</p>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Medication Timetable */}
+                          <div className="mt-3 space-y-2">
+                            <p className="text-xs font-bold text-[var(--care-ink)] flex items-center gap-1.5">
+                              <Clock className="size-3.5 text-teal-600" />
+                              Medication Schedule & Timings:
+                            </p>
+                            <div className="space-y-2">
+                              {rx.medications.map((med) => (
+                                <div
+                                  key={med.id}
+                                  className="rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)]/60 p-3 text-xs"
+                                >
+                                  <div className="flex items-center justify-between font-bold text-[var(--care-ink)]">
+                                    <span>
+                                      {med.name} ({med.dosage} - {med.form})
+                                    </span>
+                                    <span className="rounded-md bg-teal-100 px-2 py-0.5 text-[10px] text-teal-900 font-extrabold">
+                                      {med.durationDays} Days
+                                    </span>
+                                  </div>
+                                  <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
+                                    <span className="rounded bg-white px-2 py-0.5 font-bold text-teal-800 border border-teal-200">
+                                      🕒 {med.scheduleTimes.join(', ')}
+                                    </span>
+                                    <span className="rounded bg-amber-50 px-2 py-0.5 font-semibold text-amber-900 border border-amber-200">
+                                      🍽️ {med.timingInstructions}
+                                    </span>
+                                    <span className="text-[var(--care-muted)]">({med.frequency})</span>
+                                  </div>
+                                  {med.instructions && (
+                                    <p className="mt-1.5 text-[11px] text-[var(--care-muted)] italic">
+                                      "{med.instructions}"
+                                    </p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      {rx.nurseNotes && (
-                        <div className="mt-3 rounded-xl bg-teal-50/70 p-2.5 text-[11px] text-teal-950 border border-teal-200/60">
-                          <strong>Nurse Instructions:</strong> {rx.nurseNotes}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                        {rx.nurseNotes && (
+                          <div className="mt-3 rounded-xl bg-teal-50/70 p-2.5 text-[11px] text-teal-950 border border-teal-200/60">
+                            <strong>Nurse Instructions:</strong> {rx.nurseNotes}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
               </div>
             )}
           </section>
@@ -916,86 +989,136 @@ export function RoleDashboard({ roleSlug }: RoleDashboardProps) {
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
-              {billings.map((bill) => (
-                <div
-                  key={bill.id}
-                  className={`rounded-2xl border p-5 transition ${
-                    bill.status === 'paid'
-                      ? 'border-emerald-200 bg-emerald-50/40 opacity-85'
-                      : 'border-emerald-200/80 bg-white shadow-xs hover:shadow-md'
-                  }`}
-                >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-bold text-slate-500">{bill.id}</span>
-                        <span
-                          className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                            bill.status === 'paid'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-amber-100 text-amber-800 animate-pulse'
-                          }`}
-                        >
-                          {bill.status}
-                        </span>
-                      </div>
-                      <h3 className="mt-1 text-base font-bold text-[var(--care-ink)]">{bill.patientName}</h3>
-                      <p className="text-xs text-[var(--care-muted)]">
-                        Provider: <strong>{bill.providerName}</strong> ({bill.providerRole})
-                      </p>
-                    </div>
+              {billings.map((bill) => {
+                const linkedRx = prescriptions.find(
+                  (p) => p.patientName === bill.patientName || bill.id.includes(p.id) || p.mrn === bill.mrn
+                )
 
-                    <div className="text-right">
-                      <div className="text-xs text-[var(--care-muted)]">Total Amount</div>
-                      <div className="text-xl font-black text-emerald-700 font-mono">${bill.totalAmount.toFixed(2)}</div>
-                    </div>
-                  </div>
-
-                  {/* Line items */}
-                  <div className="mt-4 rounded-xl bg-slate-50 p-3 border border-slate-200/60">
-                    <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">
-                      Billable Items ({bill.items.length})
-                    </div>
-                    <div className="space-y-1.5">
-                      {bill.items.map((item, idx) => (
-                        <div key={idx} className="flex items-center justify-between text-xs">
-                          <span className="text-slate-700 truncate max-w-[200px] sm:max-w-[260px]">{item.description}</span>
-                          <span className="font-mono font-semibold text-slate-900">${item.amount.toFixed(2)}</span>
+                return (
+                  <div
+                    key={bill.id}
+                    className={`rounded-2xl border p-5 transition ${
+                      bill.status === 'paid'
+                        ? 'border-emerald-200 bg-emerald-50/40 opacity-85'
+                        : 'border-emerald-200/80 bg-white shadow-xs hover:shadow-md'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs font-bold text-slate-500">{bill.id}</span>
+                          <span
+                            className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                              bill.status === 'paid'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-amber-100 text-amber-800 animate-pulse'
+                            }`}
+                          >
+                            {bill.status}
+                          </span>
                         </div>
-                      ))}
+                        <h3 className="mt-1 text-base font-bold text-[var(--care-ink)]">{bill.patientName}</h3>
+                        <p className="text-xs text-[var(--care-muted)]">
+                          Provider: <strong>{bill.providerName}</strong> ({bill.providerRole})
+                        </p>
+                      </div>
+
+                      <div className="text-right">
+                        <div className="text-xs text-[var(--care-muted)]">Total Amount</div>
+                        <div className="text-xl font-black text-emerald-700 font-mono">${bill.totalAmount.toFixed(2)}</div>
+                      </div>
+                    </div>
+
+                    {/* Pharmacy Readiness Status */}
+                    {linkedRx && (
+                      <div className="mt-3">
+                        {linkedRx.status === 'dispensed' ? (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-700">
+                            ✓ Dispensed & Collected at {linkedRx.pickupCounter || 'Counter #2'}
+                          </span>
+                        ) : linkedRx.isReady ? (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2.5 py-1 text-[11px] font-extrabold text-emerald-900 border border-emerald-300">
+                            🟢 Medicines Packed & Ready for Payment Settle
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800 border border-amber-200">
+                            ⏳ Pharmacy Preparing Medications
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Line items */}
+                    <div className="mt-3 rounded-xl bg-slate-50 p-3 border border-slate-200/60">
+                      <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                        Billable Items ({bill.items ? bill.items.length : 0})
+                      </div>
+                      <div className="space-y-1.5">
+                        {bill.items &&
+                          bill.items.map((item, idx) => (
+                            <div key={idx} className="flex items-center justify-between text-xs">
+                              <span className="text-slate-700 truncate max-w-[200px] sm:max-w-[260px]">{item.description}</span>
+                              <span className="font-mono font-semibold text-slate-900">${item.amount.toFixed(2)}</span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex items-center justify-between border-t border-[var(--care-border)] pt-3">
+                      <span className="text-[11px] text-[var(--care-muted)]">Issued {bill.createdAt}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const isNowPaid = bill.status !== 'paid'
+                          const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+                          // Update Billing Record
+                          const updatedBillings = billings.map((b) =>
+                            b.id === bill.id
+                              ? {
+                                  ...b,
+                                  status: (isNowPaid ? 'paid' : 'pending') as BillingRecord['status'],
+                                  paidAt: isNowPaid ? timeString : undefined
+                                }
+                              : b
+                          )
+                          setBillings(updatedBillings)
+                          saveBillings(updatedBillings)
+
+                          // Cross-sync linked prescription
+                          if (linkedRx) {
+                            const updatedRx = prescriptions.map((p) =>
+                              p.id === linkedRx.id
+                                ? {
+                                    ...p,
+                                    billingStatus: (isNowPaid ? 'paid' : 'pending') as PrescriptionRecord['billingStatus'],
+                                    billPaidAt: isNowPaid ? `Today at ${timeString}` : undefined
+                                  }
+                                : p
+                            )
+                            setPrescriptions(updatedRx)
+                            savePrescriptions(updatedRx)
+                          }
+
+                          triggerAction(
+                            isNowPaid
+                              ? `Invoice for ${bill.patientName} settled ($${bill.totalAmount.toFixed(2)}). Medicine Staff notified: READY TO DISPENSE!`
+                              : `Invoice for ${bill.patientName} re-opened.`
+                          )
+                        }}
+                        className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold shadow-xs transition ${
+                          bill.status === 'paid'
+                            ? 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                            : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                        }`}
+                      >
+                        <DollarSign className="size-3.5" />
+                        <span>{bill.status === 'paid' ? 'Re-open Claim' : 'Approve & Settle Invoice (Notify Pharmacy)'}</span>
+                      </button>
                     </div>
                   </div>
-
-                  <div className="mt-4 flex items-center justify-between border-t border-[var(--care-border)] pt-3">
-                    <span className="text-[11px] text-[var(--care-muted)]">Issued {bill.createdAt}</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const updated = billings.map((b) =>
-                          b.id === bill.id
-                            ? {
-                                ...b,
-                                status: (b.status === 'paid' ? 'pending' : 'paid') as BillingRecord['status'],
-                                paidAt: b.status === 'paid' ? undefined : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                              }
-                            : b
-                        )
-                        setBillings(updated)
-                        saveBillings(updated)
-                        triggerAction(`Billing record ${bill.id} updated`)
-                      }}
-                      className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold shadow-xs transition ${
-                        bill.status === 'paid'
-                          ? 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                          : 'bg-emerald-600 text-white hover:bg-emerald-700'
-                      }`}
-                    >
-                      <DollarSign className="size-3.5" />
-                      <span>{bill.status === 'paid' ? 'Re-open Claim' : 'Approve & Settle Invoice'}</span>
-                    </button>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </section>
         )}

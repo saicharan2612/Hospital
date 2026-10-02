@@ -11,14 +11,17 @@ import {
   getAllAccounts,
   getDemoAccountByRole,
   getStoredBillings,
+  getStoredLeaveRequests,
   getStoredPatients,
   getStoredPrescriptions,
   INITIAL_PATIENTS,
   INITIAL_PRESCRIPTIONS,
+  LeaveRequest,
   MedicationItem,
   PatientRecord,
   PrescriptionRecord,
   saveBillings,
+  saveLeaveRequests,
   savePatients,
   savePrescriptions,
   syncPrescriptionToBillingRecord
@@ -80,7 +83,7 @@ import {
   Zap
 } from 'lucide-react'
 
-type NurseTab = 'queue-flow' | 'prescriptions' | 'active-consultations' | 'triage-vitals' | 'shared-orders'
+type NurseTab = 'queue-flow' | 'prescriptions' | 'active-consultations' | 'triage-vitals' | 'shared-orders' | 'leave-requests'
 
 const AVAILABLE_MEDICINES_LIBRARY = [
   { name: 'Metoprolol Succinate', defaultDosage: '25mg', form: 'Tablet' as const, timing: 'After Food' as const, frequency: 'Once Daily (Morning)', timeSlots: ['08:30 AM'] },
@@ -94,6 +97,37 @@ const AVAILABLE_MEDICINES_LIBRARY = [
   { name: 'Aspirin Cardio', defaultDosage: '81mg', form: 'Tablet' as const, timing: 'After Food' as const, frequency: 'Once Daily', timeSlots: ['09:00 AM'] }
 ]
 
+function getTomorrowIsoString(): string {
+  const d = new Date()
+  d.setDate(d.getDate() + 1)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function getDayAfterTomorrowIsoString(): string {
+  const d = new Date()
+  d.setDate(d.getDate() + 2)
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function calculateDaysBetween(startStr: string, endStr: string): number {
+  if (!startStr || !endStr) return 1
+  try {
+    const s = new Date(startStr)
+    const e = new Date(endStr)
+    const diffTime = e.getTime() - s.getTime()
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1
+    return diffDays > 0 ? diffDays : 1
+  } catch {
+    return 1
+  }
+}
+
 export function NurseDashboard() {
   const router = useRouter()
   const defaultAccount = getDemoAccountByRole('nurse') || DEMO_ACCOUNTS[2]
@@ -103,10 +137,37 @@ export function NurseDashboard() {
   const [activeTab, setActiveTab] = useState<NurseTab>('queue-flow')
   const [patients, setPatients] = useState<PatientRecord[]>(INITIAL_PATIENTS)
   const [prescriptions, setPrescriptions] = useState<PrescriptionRecord[]>(INITIAL_PRESCRIPTIONS)
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [bannerNotice, setBannerNotice] = useState<{ message: string; type?: 'success' | 'info' | 'warning' } | null>(
     null
   )
+
+  // Leave Request Form State
+  const [leaveType, setLeaveType] = useState<LeaveRequest['leaveType']>('Sick Leave')
+  const [leaveStartDate, setLeaveStartDate] = useState(getTomorrowIsoString)
+  const [leaveEndDate, setLeaveEndDate] = useState(getDayAfterTomorrowIsoString)
+  const [leaveDaysCount, setLeaveDaysCount] = useState(2)
+  const [leaveShiftSlot, setLeaveShiftSlot] = useState<LeaveRequest['shiftSlot']>('Morning (08:00 - 16:00)')
+  const [leaveReason, setLeaveReason] = useState('')
+
+  const leaveStartRef = React.useRef<HTMLInputElement>(null)
+  const leaveEndRef = React.useRef<HTMLInputElement>(null)
+
+  const handleStartDateChange = (val: string) => {
+    setLeaveStartDate(val)
+    if (val > leaveEndDate) {
+      setLeaveEndDate(val)
+      setLeaveDaysCount(1)
+    } else {
+      setLeaveDaysCount(calculateDaysBetween(val, leaveEndDate))
+    }
+  }
+
+  const handleEndDateChange = (val: string) => {
+    setLeaveEndDate(val)
+    setLeaveDaysCount(calculateDaysBetween(leaveStartDate, val))
+  }
 
   // Doctor list for assignment
   const [availableDoctors, setAvailableDoctors] = useState<DemoAccount[]>([])
@@ -191,6 +252,20 @@ export function NurseDashboard() {
     }
 
     setPrescriptions(getStoredPrescriptions())
+    setLeaveRequests(getStoredLeaveRequests())
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'carelink_leave_requests') {
+        setLeaveRequests(getStoredLeaveRequests())
+      }
+      if (e.key === 'carelink_patients') {
+        setPatients(getStoredPatients())
+      }
+      if (e.key === 'carelink_prescriptions') {
+        setPrescriptions(getStoredPrescriptions())
+      }
+    }
+    window.addEventListener('storage', handleStorageChange)
 
     const stored = localStorage.getItem('carelink_user')
     if (stored) {
@@ -198,7 +273,7 @@ export function NurseDashboard() {
         const parsed = JSON.parse(stored) as DemoAccount
         if (parsed && parsed.roleSlug === 'nurse') {
           setCurrentUser(parsed)
-          return
+          return () => window.removeEventListener('storage', handleStorageChange)
         }
       } catch {
         // ignore parsing error
@@ -210,6 +285,8 @@ export function NurseDashboard() {
       setCurrentUser(matched)
       localStorage.setItem('carelink_user', JSON.stringify(matched))
     }
+
+    return () => window.removeEventListener('storage', handleStorageChange)
   }, [])
 
   const showNotice = (message: string, type: 'success' | 'info' | 'warning' = 'success') => {
@@ -225,6 +302,48 @@ export function NurseDashboard() {
   const persistPrescriptions = (next: PrescriptionRecord[]) => {
     setPrescriptions(next)
     savePrescriptions(next)
+  }
+
+  const handleSubmitLeaveRequest = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!leaveReason.trim()) {
+      showNotice('Please provide a reason for the leave request.', 'warning')
+      return
+    }
+
+    const tomorrowStr = getTomorrowIsoString()
+    if (leaveStartDate < tomorrowStr) {
+      showNotice('Leave can only be requested from tomorrow onwards. Today and past dates are not permitted.', 'warning')
+      return
+    }
+
+    if (leaveEndDate < leaveStartDate) {
+      showNotice('End date cannot be earlier than start date.', 'warning')
+      return
+    }
+
+    const finalDays = Math.max(1, calculateDaysBetween(leaveStartDate, leaveEndDate))
+
+    const newLeave: LeaveRequest = {
+      id: `leave-nurse-${Date.now()}`,
+      staffId: currentUser.id,
+      staffName: currentUser.name,
+      staffRole: 'Nurse',
+      department: 'Inpatient Medical/Surgical Ward 4B',
+      leaveType,
+      startDate: leaveStartDate,
+      endDate: leaveEndDate,
+      shiftSlot: leaveShiftSlot,
+      reason: `${leaveReason.trim()} (${finalDays} day${finalDays > 1 ? 's' : ''})`,
+      status: 'pending',
+      submittedAt: `Today at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    }
+
+    const updated = [newLeave, ...leaveRequests]
+    setLeaveRequests(updated)
+    saveLeaveRequests(updated)
+    setLeaveReason('')
+    showNotice(`🏖️ Leave request for ${finalDays} day(s) (${leaveStartDate} to ${leaveEndDate}) submitted to Admin for approval!`, 'success')
   }
 
   const handleSignOut = () => {
@@ -711,6 +830,39 @@ export function NurseDashboard() {
               >
                 {prescriptions.length}
               </span>
+            </button>
+          </div>
+
+          {/* Group 3: Staff Governance & Leave Requests */}
+          <div className="space-y-1">
+            <div className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-[var(--care-muted)]">
+              Staff Governance & Time-Off
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('leave-requests')}
+              className={`flex w-full items-center justify-between rounded-xl px-3.5 py-2.5 text-xs font-semibold transition ${
+                activeTab === 'leave-requests'
+                  ? 'bg-[var(--care-primary)] text-white shadow-sm'
+                  : 'text-[var(--care-ink)] hover:bg-[var(--care-highlight)]'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Calendar className="size-4" />
+                <span>Request Leave / Time-Off</span>
+              </div>
+              {leaveRequests.filter((l) => (l.staffRole === 'Nurse' || l.staffId === currentUser.id) && l.status === 'pending').length > 0 && (
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                    activeTab === 'leave-requests'
+                      ? 'bg-white/20 text-white'
+                      : 'bg-amber-100 text-amber-900'
+                  }`}
+                >
+                  {leaveRequests.filter((l) => (l.staffRole === 'Nurse' || l.staffId === currentUser.id) && l.status === 'pending').length} Pending
+                </span>
+              )}
             </button>
           </div>
 
@@ -1556,6 +1708,248 @@ export function NurseDashboard() {
               </div>
             </div>
           )}
+
+          {/* TAB 6: LEAVE REQUESTS & TIME-OFF PORTAL */}
+          {activeTab === 'leave-requests' && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              <div className="rounded-3xl border border-teal-200 bg-linear-to-r from-teal-900 via-teal-800 to-slate-900 p-6 text-white shadow-lg">
+                <h2 className="text-xl font-bold flex items-center gap-2">
+                  <Calendar className="size-5 text-teal-300" />
+                  Nurse Leave Application & Shift Governance
+                </h2>
+                <p className="text-xs text-teal-200 mt-1 max-w-xl">
+                  Submit time-off and sick leave requests to the Hospital Administration. Admin approvals and shift replacement coverage sync in real-time.
+                </p>
+              </div>
+
+              <div className="grid gap-6 lg:grid-cols-3">
+                {/* Leave Application Form */}
+                <div className="lg:col-span-1 rounded-3xl border border-[var(--care-border)] bg-[var(--care-surface)] p-6 shadow-xs">
+                  <h3 className="text-sm font-bold text-[var(--care-ink)] mb-1 flex items-center gap-2">
+                    <PlusCircle className="size-4 text-teal-600" />
+                    New Leave Request
+                  </h3>
+                  <p className="text-xs text-[var(--care-muted)] mb-4">Submit days and details for admin authorization.</p>
+
+                  <form onSubmit={handleSubmitLeaveRequest} className="space-y-4 text-xs">
+                    <div>
+                      <label className="font-bold text-slate-800 block mb-1.5">Leave Type</label>
+                      <select
+                        value={leaveType}
+                        onChange={(e) => setLeaveType(e.target.value as LeaveRequest['leaveType'])}
+                        className="w-full rounded-xl border-2 border-slate-300 bg-white p-3 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
+                      >
+                        <option value="Sick Leave">Sick Leave</option>
+                        <option value="Annual Leave">Annual Leave (Vacation)</option>
+                        <option value="Emergency Leave">Emergency Leave</option>
+                        <option value="Medical Conference">Medical Conference / Training</option>
+                        <option value="Maternity / Paternity">Maternity / Paternity</option>
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 items-start">
+                      <div>
+                        <label className="flex h-5 items-center font-bold text-slate-800 mb-1.5 truncate">
+                          Start Date <span className="ml-1 text-[10px] font-normal text-teal-700">(From Tomorrow)</span>
+                        </label>
+                        <div className="relative flex items-center">
+                          <input
+                            ref={leaveStartRef}
+                            type="date"
+                            min={getTomorrowIsoString()}
+                            value={leaveStartDate}
+                            onChange={(e) => handleStartDateChange(e.target.value)}
+                            className="h-11 w-full rounded-xl border-2 border-slate-300 bg-white pl-3 pr-9 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100 cursor-pointer"
+                            required
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              try {
+                                leaveStartRef.current?.showPicker()
+                              } catch {
+                                leaveStartRef.current?.focus()
+                              }
+                            }}
+                            className="absolute right-2 flex size-7 items-center justify-center rounded-lg text-teal-700 hover:bg-teal-50 hover:text-teal-900 transition"
+                            title="Click calendar to pick start date"
+                          >
+                            <Calendar className="size-4" />
+                          </button>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="flex h-5 items-center font-bold text-slate-800 mb-1.5 truncate">
+                          End Date <span className="ml-1 text-[10px] font-normal text-teal-700">(To Date)</span>
+                        </label>
+                        <div className="relative flex items-center">
+                          <input
+                            ref={leaveEndRef}
+                            type="date"
+                            min={leaveStartDate || getTomorrowIsoString()}
+                            value={leaveEndDate}
+                            onChange={(e) => handleEndDateChange(e.target.value)}
+                            className="h-11 w-full rounded-xl border-2 border-slate-300 bg-white pl-3 pr-9 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100 cursor-pointer"
+                            required
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              try {
+                                leaveEndRef.current?.showPicker()
+                              } catch {
+                                leaveEndRef.current?.focus()
+                              }
+                            }}
+                            className="absolute right-2 flex size-7 items-center justify-center rounded-lg text-teal-700 hover:bg-teal-50 hover:text-teal-900 transition"
+                            title="Click calendar to pick end date"
+                          >
+                            <Calendar className="size-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 items-start">
+                      <div>
+                        <label className="flex h-5 items-center font-bold text-slate-800 mb-1.5 truncate">
+                          Total Days (Calculated)
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={60}
+                          value={leaveDaysCount}
+                          onChange={(e) => setLeaveDaysCount(Math.max(1, Number(e.target.value)))}
+                          className="h-11 w-full rounded-xl border-2 border-slate-300 bg-slate-50 px-3 text-xs font-black text-slate-900 shadow-xs outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="flex h-5 items-center font-bold text-slate-800 mb-1.5 truncate">
+                          Shift Slot
+                        </label>
+                        <select
+                          value={leaveShiftSlot}
+                          onChange={(e) => setLeaveShiftSlot(e.target.value as LeaveRequest['shiftSlot'])}
+                          className="h-11 w-full rounded-xl border-2 border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
+                        >
+                          <option value="Morning (08:00 - 16:00)">Morning (08:00 - 16:00)</option>
+                          <option value="Evening (16:00 - 00:00)">Evening (16:00 - 00:00)</option>
+                          <option value="Night (00:00 - 08:00)">Night (00:00 - 08:00)</option>
+                          <option value="Full Day (All Shifts)">Full Day (All Shifts)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-slate-800 block mb-1.5">Reason for Leave *</label>
+                      <textarea
+                        value={leaveReason}
+                        onChange={(e) => setLeaveReason(e.target.value)}
+                        placeholder="Provide details about why you need time off..."
+                        rows={3}
+                        className="w-full rounded-xl border-2 border-slate-300 bg-white p-3 text-xs font-medium text-slate-900 shadow-xs outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100 placeholder:text-slate-400"
+                        required
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-teal-600 hover:bg-teal-700 py-3.5 text-xs font-black text-white shadow-md transition active:scale-[0.98]"
+                    >
+                      <Send className="size-4" />
+                      <span>Submit Request to Admin</span>
+                    </button>
+                  </form>
+                </div>
+
+                {/* My Leave Applications Log */}
+                <div className="lg:col-span-2 space-y-4">
+                  <div className="rounded-3xl border border-[var(--care-border)] bg-[var(--care-surface)] p-6 shadow-xs">
+                    <div className="flex items-center justify-between border-b border-[var(--care-border)] pb-3 mb-4">
+                      <div>
+                        <h3 className="text-sm font-bold text-[var(--care-ink)]">My Leave Applications & Review Status</h3>
+                        <p className="text-xs text-[var(--care-muted)]">Live synchronization with Admin governance decisions</p>
+                      </div>
+                      <span className="rounded-full bg-[var(--care-highlight)] px-3 py-1 text-xs font-mono font-bold text-[var(--care-primary-dark)]">
+                        {leaveRequests.filter((l) => l.staffRole === 'Nurse' || l.staffId === currentUser.id).length} Total
+                      </span>
+                    </div>
+
+                    {leaveRequests.filter((l) => l.staffRole === 'Nurse' || l.staffId === currentUser.id).length === 0 ? (
+                      <div className="text-center py-8 text-xs text-[var(--care-muted)]">
+                        <Calendar className="size-8 text-teal-300 mx-auto mb-2" />
+                        No leave applications filed yet. Use the form on the left to submit a time-off request.
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {leaveRequests
+                          .filter((l) => l.staffRole === 'Nurse' || l.staffId === currentUser.id)
+                          .map((req) => (
+                            <div
+                              key={req.id}
+                              className={`rounded-2xl border p-4 transition ${
+                                req.status === 'approved'
+                                  ? 'border-emerald-200 bg-emerald-50/40'
+                                  : req.status === 'rejected'
+                                  ? 'border-red-200 bg-red-50/40'
+                                  : 'border-amber-200 bg-amber-50/30'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between">
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-[var(--care-ink)] text-sm">{req.leaveType}</span>
+                                    <span className="text-[11px] text-[var(--care-muted)] font-mono">
+                                      {req.startDate} → {req.endDate}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-[var(--care-ink)] mt-1">
+                                    <strong>Reason:</strong> {req.reason}
+                                  </p>
+                                  <p className="text-[10px] text-[var(--care-muted)] mt-0.5">
+                                    Shift: {req.shiftSlot} · Submitted: {req.submittedAt}
+                                  </p>
+                                </div>
+
+                                <div>
+                                  {req.status === 'pending' && (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-extrabold text-amber-900 border border-amber-300 animate-pulse">
+                                      <Timer className="size-3" />
+                                      Pending Admin Review
+                                    </span>
+                                  )}
+                                  {req.status === 'approved' && (
+                                    <div className="text-right">
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-extrabold text-emerald-900 border border-emerald-300">
+                                        <Check className="size-3" />
+                                        Approved by Admin
+                                      </span>
+                                      {req.replacementStaffName && (
+                                        <p className="text-[10px] text-emerald-700 font-semibold mt-1">
+                                          Covered by: {req.replacementStaffName}
+                                        </p>
+                                      )}
+                                    </div>
+                                  )}
+                                  {req.status === 'rejected' && (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-1 text-[10px] font-extrabold text-red-900 border border-red-300">
+                                      <X className="size-3" />
+                                      Rejected by Admin
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </main>
       </div>
 
@@ -1582,12 +1976,12 @@ export function NurseDashboard() {
             </div>
 
             <form onSubmit={handleConfirmAssignment} className="mt-4 space-y-4">
-              <label className="grid gap-1.5 text-xs font-bold text-[var(--care-ink)]">
+              <label className="grid gap-1.5 text-xs font-bold text-slate-800">
                 Select Attending Physician
                 <select
                   value={selectedDoctorName}
                   onChange={(e) => setSelectedDoctorName(e.target.value)}
-                  className="h-11 rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 text-xs font-semibold"
+                  className="h-11 rounded-xl border-2 border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
                 >
                   {availableDoctors.map((doc) => (
                     <option key={doc.id} value={doc.name}>
@@ -1597,12 +1991,12 @@ export function NurseDashboard() {
                 </select>
               </label>
 
-              <label className="grid gap-1.5 text-xs font-bold text-[var(--care-ink)]">
+              <label className="grid gap-1.5 text-xs font-bold text-slate-800">
                 Select Clinic / OPD Room
                 <select
                   value={selectedRoomNumber}
                   onChange={(e) => setSelectedRoomNumber(e.target.value)}
-                  className="h-11 rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 text-xs font-semibold"
+                  className="h-11 rounded-xl border-2 border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
                 >
                   <option value="OPD Room 204 (Cardiology)">OPD Room 204 (Cardiology)</option>
                   <option value="OPD Room 206 (Echo & Vitals)">OPD Room 206 (Echo & Vitals)</option>
@@ -1611,14 +2005,14 @@ export function NurseDashboard() {
                 </select>
               </label>
 
-              <label className="grid gap-1.5 text-xs font-bold text-[var(--care-ink)]">
+              <label className="grid gap-1.5 text-xs font-bold text-slate-800">
                 Triage Handoff Note for Doctor
                 <textarea
                   value={triageNote}
                   onChange={(e) => setTriageNote(e.target.value)}
                   rows={2}
                   placeholder="e.g. Vitals stable. Chief complaint of palpitations and mild dyspnea."
-                  className="rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 py-2 text-xs"
+                  className="rounded-xl border-2 border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-900 shadow-xs outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100 placeholder:text-slate-400"
                 />
               </label>
 
@@ -1632,7 +2026,7 @@ export function NurseDashboard() {
                 </button>
                 <button
                   type="submit"
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--care-primary)] px-5 py-2 text-xs font-bold text-white hover:bg-[var(--care-primary-dark)]"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-teal-600 px-5 py-2 text-xs font-bold text-white shadow-md hover:bg-teal-700 transition"
                 >
                   <DoorOpen className="size-4" />
                   <span>Call & Send to Room</span>
@@ -1667,63 +2061,63 @@ export function NurseDashboard() {
 
             <form onSubmit={handleSaveTriageVitals} className="mt-4 space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <label className="grid gap-1 text-xs font-bold text-[var(--care-ink)]">
+                <label className="grid gap-1 text-xs font-bold text-slate-800">
                   Blood Pressure (mmHg)
                   <input
                     type="text"
                     value={bpInput}
                     onChange={(e) => setBpInput(e.target.value)}
                     placeholder="120/80"
-                    className="h-10 rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 text-xs"
+                    className="h-10 rounded-xl border-2 border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100 placeholder:text-slate-400"
                     required
                   />
                 </label>
 
-                <label className="grid gap-1 text-xs font-bold text-[var(--care-ink)]">
+                <label className="grid gap-1 text-xs font-bold text-slate-800">
                   Heart Rate (BPM)
                   <input
                     type="text"
                     value={hrInput}
                     onChange={(e) => setHrInput(e.target.value)}
                     placeholder="76"
-                    className="h-10 rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 text-xs"
+                    className="h-10 rounded-xl border-2 border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100 placeholder:text-slate-400"
                     required
                   />
                 </label>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                <label className="grid gap-1 text-xs font-bold text-[var(--care-ink)]">
+                <label className="grid gap-1 text-xs font-bold text-slate-800">
                   SpO2 (%)
                   <input
                     type="text"
                     value={spo2Input}
                     onChange={(e) => setSpo2Input(e.target.value)}
                     placeholder="99"
-                    className="h-10 rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 text-xs"
+                    className="h-10 rounded-xl border-2 border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100 placeholder:text-slate-400"
                     required
                   />
                 </label>
 
-                <label className="grid gap-1 text-xs font-bold text-[var(--care-ink)]">
+                <label className="grid gap-1 text-xs font-bold text-slate-800">
                   Temperature (°F)
                   <input
                     type="text"
                     value={tempInput}
                     onChange={(e) => setTempInput(e.target.value)}
                     placeholder="98.6"
-                    className="h-10 rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 text-xs"
+                    className="h-10 rounded-xl border-2 border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100 placeholder:text-slate-400"
                     required
                   />
                 </label>
               </div>
 
-              <label className="grid gap-1 text-xs font-bold text-[var(--care-ink)]">
+              <label className="grid gap-1 text-xs font-bold text-slate-800">
                 Triage Priority Classification
                 <select
                   value={priorityInput}
                   onChange={(e) => setPriorityInput(e.target.value as any)}
-                  className="h-10 rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 text-xs font-semibold"
+                  className="h-10 rounded-xl border-2 border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
                 >
                   <option value="Normal">Normal (Routine Consultation)</option>
                   <option value="Urgent">Urgent (Chest Discomfort / Elevated Vitals)</option>
@@ -1741,7 +2135,7 @@ export function NurseDashboard() {
                 </button>
                 <button
                   type="submit"
-                  className="rounded-xl bg-[var(--care-primary)] px-4 py-2 text-xs font-bold text-white hover:bg-[var(--care-primary-dark)]"
+                  className="rounded-xl bg-teal-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-teal-700 transition"
                 >
                   Save Vitals
                 </button>
@@ -1772,20 +2166,20 @@ export function NurseDashboard() {
             </div>
 
             <form onSubmit={handleRegisterWalkin} className="mt-4 space-y-3">
-              <label className="grid gap-1 text-xs font-bold text-[var(--care-ink)]">
+              <label className="grid gap-1 text-xs font-bold text-slate-800">
                 Patient Full Name
                 <input
                   type="text"
                   value={walkinName}
                   onChange={(e) => setWalkinName(e.target.value)}
                   placeholder="e.g. Julian Vance"
-                  className="h-10 rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 text-xs"
+                  className="h-10 rounded-xl border-2 border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100 placeholder:text-slate-400"
                   required
                 />
               </label>
 
               <div className="grid grid-cols-2 gap-3">
-                <label className="grid gap-1 text-xs font-bold text-[var(--care-ink)]">
+                <label className="grid gap-1 text-xs font-bold text-slate-800">
                   Age
                   <input
                     type="number"
@@ -1793,17 +2187,17 @@ export function NurseDashboard() {
                     max={120}
                     value={walkinAge}
                     onChange={(e) => setWalkinAge(e.target.value)}
-                    className="h-10 rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 text-xs"
+                    className="h-10 rounded-xl border-2 border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
                     required
                   />
                 </label>
 
-                <label className="grid gap-1 text-xs font-bold text-[var(--care-ink)]">
+                <label className="grid gap-1 text-xs font-bold text-slate-800">
                   Gender
                   <select
                     value={walkinGender}
                     onChange={(e) => setWalkinGender(e.target.value as any)}
-                    className="h-10 rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 text-xs font-semibold"
+                    className="h-10 rounded-xl border-2 border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
                   >
                     <option value="Female">Female</option>
                     <option value="Male">Male</option>
@@ -1812,12 +2206,12 @@ export function NurseDashboard() {
                 </label>
               </div>
 
-              <label className="grid gap-1 text-xs font-bold text-[var(--care-ink)]">
+              <label className="grid gap-1 text-xs font-bold text-slate-800">
                 Assigned Doctor
                 <select
                   value={walkinDoctor}
                   onChange={(e) => setWalkinDoctor(e.target.value)}
-                  className="h-10 rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 text-xs font-semibold"
+                  className="h-10 rounded-xl border-2 border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
                 >
                   {availableDoctors.map((doc) => (
                     <option key={doc.id} value={doc.name}>
@@ -1827,12 +2221,12 @@ export function NurseDashboard() {
                 </select>
               </label>
 
-              <label className="grid gap-1 text-xs font-bold text-[var(--care-ink)]">
+              <label className="grid gap-1 text-xs font-bold text-slate-800">
                 Triage Priority
                 <select
                   value={walkinPriority}
                   onChange={(e) => setWalkinPriority(e.target.value as any)}
-                  className="h-10 rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 text-xs font-semibold"
+                  className="h-10 rounded-xl border-2 border-slate-300 bg-white px-3 text-xs font-bold text-slate-900 shadow-xs outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
                 >
                   <option value="Normal">Normal (Routine)</option>
                   <option value="Urgent">Urgent (Chest Discomfort / Fever)</option>
@@ -1840,14 +2234,14 @@ export function NurseDashboard() {
                 </select>
               </label>
 
-              <label className="grid gap-1 text-xs font-bold text-[var(--care-ink)]">
+              <label className="grid gap-1 text-xs font-bold text-slate-800">
                 Chief Complaint / Symptoms
                 <textarea
                   value={walkinSymptoms}
                   onChange={(e) => setWalkinSymptoms(e.target.value)}
                   rows={2}
                   placeholder="e.g. Mild palpitations, post-meal dizziness"
-                  className="rounded-xl border border-[var(--care-border)] bg-[var(--care-bg)] px-3 py-2 text-xs"
+                  className="rounded-xl border-2 border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-900 shadow-xs outline-none transition focus:border-teal-600 focus:ring-4 focus:ring-teal-100 placeholder:text-slate-400"
                   required
                 />
               </label>
@@ -1862,7 +2256,7 @@ export function NurseDashboard() {
                 </button>
                 <button
                   type="submit"
-                  className="rounded-xl bg-[var(--care-primary)] px-4 py-2 text-xs font-bold text-white hover:bg-[var(--care-primary-dark)]"
+                  className="rounded-xl bg-teal-600 px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-teal-700 transition"
                 >
                   Add to Queue
                 </button>
