@@ -513,6 +513,29 @@ export function DoctorDashboard() {
         doctorNote: customNote?.trim() || 'Appointment confirmed by Dr. Alexander Wright. Clinic room assigned.'
       })
     }
+
+    // Dispatch SMTP email alert to patient
+    try {
+      fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'appointment',
+          to: appointment.patientEmail || 'dullasaicharan2612@gmail.com',
+          appointmentData: {
+            patientName: appointment.patientName,
+            doctorName: currentUser.name,
+            date: formatDisplayDate(appointment.requestedDate),
+            time: appointment.requestedTime,
+            status: 'Approved & Confirmed',
+            notes: customNote?.trim() || 'Your consultation has been confirmed. Please arrive 10 minutes prior.',
+            department: appointment.department
+          }
+        })
+      }).catch(() => {})
+    } catch {
+      // ignore network errors
+    }
   }
 
   // Open Reschedule Modal
@@ -601,6 +624,29 @@ export function DoctorDashboard() {
         rescheduledTime: rescheduleTime,
         doctorNote: rescheduleNote.trim() || 'Please confirm the updated appointment slot proposed by your physician.'
       })
+    }
+
+    // Dispatch SMTP email alert to patient
+    try {
+      fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'appointment',
+          to: rescheduleTarget.patientEmail || 'dullasaicharan2612@gmail.com',
+          appointmentData: {
+            patientName: rescheduleTarget.patientName,
+            doctorName: currentUser.name,
+            date: formatDisplayDate(rescheduleDate),
+            time: rescheduleTime,
+            status: 'Rescheduled by Physician',
+            notes: rescheduleNote.trim() || 'Physician schedule adjustment. Please review new slot.',
+            department: rescheduleTarget.department
+          }
+        })
+      }).catch(() => {})
+    } catch {
+      // ignore network errors
     }
 
     setRescheduleTarget(null)

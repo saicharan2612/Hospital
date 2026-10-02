@@ -12,34 +12,39 @@ export function SignUpForm() {
   const router = useRouter()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
-  const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [show, setShow] = useState(false)
   const [consent, setConsent] = useState(false)
   const [error, setError] = useState('')
-  const [submitted, setSubmitted] = useState(false)
+  const [loading, setLoading] = useState(false)
 
-  const submit = (event: FormEvent) => {
+  const submit = async (event: FormEvent) => {
     event.preventDefault()
     setError('')
     if (password !== confirm) return setError('Passwords do not match.')
     if (password.length < 8) return setError('Password must be at least 8 characters.')
     if (!consent) return setError('Please accept the terms and consent to continue.')
 
-    // Create a client patient session
+    setLoading(true)
+
+    const cleanEmail = email.trim().toLowerCase()
+    const cleanName = name.trim() || 'New Patient'
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString()
+
+    // Create a pending patient profile
     const newPatient: DemoAccount = {
       id: `patient-${Date.now()}`,
       roleSlug: 'patient',
       roleLabel: 'Patient / User',
-      name: name.trim() || 'New Registered Patient',
+      name: cleanName,
       title: 'Registered CareLink Patient',
       department: 'Personal Health Portal',
-      email: email.trim().toLowerCase(),
+      email: cleanEmail,
       password: password,
       badge: 'New Patient',
       badgeColor: 'bg-purple-100 text-purple-800 border-purple-200',
-      avatarInitials: name.slice(0, 2).toUpperCase() || 'PT',
+      avatarInitials: cleanName.slice(0, 2).toUpperCase() || 'PT',
       summary: 'Personal health portal access for medical records, lab reports, and appointment scheduling.',
       permissions: [
         'Personal medical records & test history access',
@@ -48,13 +53,13 @@ export function SignUpForm() {
         'Prescription refill requests'
       ],
       stats: [
-        { label: 'Account Status', value: 'Active', change: 'Profile created', tone: 'positive' },
+        { label: 'Account Status', value: 'Active', change: 'Profile verified', tone: 'positive' },
         { label: 'Upcoming Visits', value: '0 Scheduled', change: 'Book your first visit', tone: 'neutral' },
         { label: 'Care Team', value: 'Unassigned', change: 'Assign a physician', tone: 'neutral' },
         { label: 'Records Synced', value: '100%', change: 'All up to date', tone: 'positive' }
       ],
       recentActivities: [
-        { title: 'Patient Account Created', subtitle: 'Welcome to CareLink health portal', time: 'Just now', status: 'Active', statusColor: 'bg-emerald-100 text-emerald-800' }
+        { title: 'Patient Account Registered', subtitle: 'Email verification completed', time: 'Just now', status: 'Active', statusColor: 'bg-emerald-100 text-emerald-800' }
       ],
       quickActions: [
         { label: 'Book First Appointment', description: 'Search available doctors and departments' },
@@ -64,9 +69,46 @@ export function SignUpForm() {
     }
 
     if (typeof window !== 'undefined') {
-      localStorage.setItem('carelink_user', JSON.stringify(newPatient))
+      localStorage.setItem(
+        'carelink_pending_registration',
+        JSON.stringify({
+          account: newPatient,
+          otpCode,
+          email: cleanEmail
+        })
+      )
     }
-    setSubmitted(true)
+
+    try {
+      const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'
+      const verifyLink = `${origin}/verify-email?email=${encodeURIComponent(cleanEmail)}&code=${otpCode}`
+
+      const res = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'verification',
+          to: cleanEmail,
+          name: cleanName,
+          otpCode,
+          verifyLink,
+          subject: 'CareLink — Verify Your Email Address & Activate Account'
+        })
+      })
+
+      const data = await res.json()
+      if (!data.success) {
+        setLoading(false)
+        setError(data.error || 'Failed to send verification email via SMTP.')
+        return
+      }
+
+      // Redirect to verification screen
+      router.push(`/verify-email?email=${encodeURIComponent(cleanEmail)}&sent=true`)
+    } catch (err: any) {
+      setLoading(false)
+      setError(err.message || 'Network error while attempting to send verification email.')
+    }
   }
 
   return (
@@ -74,43 +116,33 @@ export function SignUpForm() {
       <div className="mb-7">
         <h2 className="text-2xl font-semibold text-[var(--care-ink)]">Create a patient account</h2>
         <p className="mt-2 text-sm leading-6 text-[var(--care-muted)]">
-          Public registration is for patients and users only. Staff accounts are provisioned separately.
+          Public registration is for patients and users only. A secure verification link and code will be sent to your email.
         </p>
       </div>
 
-      {submitted ? (
-        <div className="space-y-4">
-          <StatusMessage>
-            Account created successfully for <strong>{email}</strong>! You can now explore the patient portal.
-          </StatusMessage>
-          <button
-            type="button"
-            onClick={() => router.push('/patient')}
-            className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--care-primary)] px-5 font-semibold text-white transition hover:bg-[var(--care-primary-dark)]"
-          >
-            Enter Patient Dashboard <ArrowRight className="size-4" />
-          </button>
-        </div>
-      ) : (
-        <form onSubmit={submit} className="grid gap-4">
-          <TextInput id="name" label="Full name" value={name} onChange={setName} placeholder="Your full name" />
-          <TextInput id="email" label="Email address" type="email" value={email} onChange={setEmail} placeholder="you@example.com" />
-          <TextInput id="phone" label="Phone number" type="tel" value={phone} onChange={setPhone} placeholder="Optional" />
-          <PasswordField id="password" label="Password" value={password} onChange={setPassword} show={show} onToggle={() => setShow(!show)} />
-          <PasswordField id="confirm" label="Confirm password" value={confirm} onChange={setConfirm} show={show} onToggle={() => setShow(!show)} />
-          {error && <StatusMessage tone="error">{error}</StatusMessage>}
-          <label className="flex items-start gap-3 text-sm leading-6 text-[var(--care-muted)]">
-            <input
-              type="checkbox"
-              checked={consent}
-              onChange={(event) => setConsent(event.target.checked)}
-              className="mt-1 size-4 accent-[var(--care-primary)]"
-            />
-            I agree to the CareLink terms and consent to account communication.
-          </label>
-          <PrimaryButton>Create account</PrimaryButton>
-        </form>
-      )}
+      <form onSubmit={submit} className="grid gap-4">
+        <TextInput id="name" label="Full name" value={name} onChange={setName} placeholder="Your full name" />
+        <TextInput id="email" label="Email address" type="email" value={email} onChange={setEmail} placeholder="you@example.com" />
+        <PasswordField id="password" label="Password" value={password} onChange={setPassword} show={show} onToggle={() => setShow(!show)} />
+        <PasswordField id="confirm" label="Confirm password" value={confirm} onChange={setConfirm} show={show} onToggle={() => setShow(!show)} />
+        {error && <StatusMessage tone="error">{error}</StatusMessage>}
+        <label className="flex items-start gap-3 text-sm leading-6 text-[var(--care-muted)]">
+          <input
+            type="checkbox"
+            checked={consent}
+            onChange={(event) => setConsent(event.target.checked)}
+            className="mt-1 size-4 accent-[var(--care-primary)]"
+          />
+          I agree to the CareLink terms and consent to account communication.
+        </label>
+        <button
+          type="submit"
+          disabled={loading}
+          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[var(--care-primary)] px-5 font-semibold text-white transition hover:bg-[var(--care-primary-dark)] disabled:opacity-50 cursor-pointer shadow-md"
+        >
+          {loading ? 'Sending Verification Link via SMTP...' : 'Create Account & Send Verification Link'}
+        </button>
+      </form>
 
       <p className="mt-6 text-center text-sm text-[var(--care-muted)]">
         Already have an account?{' '}
